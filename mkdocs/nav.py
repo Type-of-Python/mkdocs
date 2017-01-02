@@ -41,6 +41,9 @@ class SiteNavigation(object):
     def __iter__(self):
         return iter(self.nav_items)
 
+    def __len__(self):
+        return len(self.nav_items)
+
     def walk_pages(self):
         """
         Returns each page in the site in turn.
@@ -82,6 +85,7 @@ class URLContext(object):
 
     def __init__(self):
         self.base_path = '/'
+        self.force_abs_urls = False
 
     def set_current_url(self, current_url):
         self.base_path = os.path.dirname(current_url)
@@ -91,6 +95,10 @@ class URLContext(object):
         Given a URL path return it as a relative URL,
         given the context of the current page.
         """
+        if self.force_abs_urls:
+            abs_url = '%s/%s' % (self.base_path.rstrip('/'), utils.path_to_url(url.lstrip('/')))
+            return abs_url.rstrip('/')
+
         suffix = '/' if (url.endswith('/') and len(url) > 1) else ''
         # Workaround for bug on `os.path.relpath()` in Python 2.6
         if self.base_path == '/':
@@ -137,7 +145,15 @@ class Page(object):
         self.abs_url = url
         self.active = False
         self.url_context = url_context
-        self.update_date = datetime.datetime.now().strftime("%Y-%m-%d")
+
+        # Support SOURCE_DATE_EPOCH environment variable for "reproducible" builds.
+        # See https://reproducible-builds.org/specs/source-date-epoch/
+        if 'SOURCE_DATE_EPOCH' in os.environ:
+            self.update_date = datetime.datetime.utcfromtimestamp(
+                int(os.environ['SOURCE_DATE_EPOCH'])
+            ).strftime("%Y-%m-%d")
+        else:
+            self.update_date = datetime.datetime.now().strftime("%Y-%m-%d")
 
         # Relative paths to the input markdown file and output html file.
         self.input_path = path
@@ -151,6 +167,7 @@ class Page(object):
         # Placeholders to be filled in later in the build
         # process when we have access to the config.
         self.canonical_url = None
+        self.edit_url = None
         self.content = None
         self.meta = None
         self.toc = None
@@ -185,6 +202,18 @@ class Page(object):
         if not base.endswith('/'):
             base += '/'
         self.canonical_url = utils.urljoin(base, self.abs_url.lstrip('/'))
+
+    def set_edit_url(self, repo_url, edit_uri):
+        if not repo_url.endswith('/'):
+            repo_url += '/'
+        if not edit_uri:
+            self.edit_url = repo_url
+        else:
+            if not edit_uri.endswith('/'):
+                edit_uri += '/'
+            self.edit_url = utils.urljoin(
+                repo_url + edit_uri,
+                self.input_path)
 
 
 class Header(object):

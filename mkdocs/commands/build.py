@@ -2,6 +2,7 @@
 
 from __future__ import unicode_literals
 from datetime import datetime
+from calendar import timegm
 import io
 import logging
 import os
@@ -15,7 +16,29 @@ from mkdocs.utils import filters
 from mkdocs.relative_path_ext import RelativePathExtension
 import mkdocs
 
+
+class DuplicateFilter(object):
+    ''' Avoid logging duplicate messages. '''
+    def __init__(self):
+        self.msgs = set()
+
+    def filter(self, record):
+        rv = record.msg not in self.msgs
+        self.msgs.add(record.msg)
+        return rv
+
+
 log = logging.getLogger(__name__)
+log.addFilter(DuplicateFilter())
+
+
+def get_complete_paths(config, page):
+    """
+    Return the complete input/output paths for the supplied page.
+    """
+    input_path = os.path.join(config['docs_dir'], page.input_path)
+    output_path = os.path.join(config['site_dir'], page.output_path)
+    return input_path, output_path
 
 
 def convert_markdown(markdown_source, config, site_navigation=None):
@@ -43,50 +66,42 @@ def get_global_context(nav, config):
     to app pages.
     """
 
-    site_name = config['site_name']
-
-    if config['site_favicon']:
-        site_favicon = nav.url_context.make_relative('/' + config['site_favicon'])
-    else:
-        site_favicon = None
-
-    page_description = config['site_description']
-
     extra_javascript = utils.create_media_urls(nav, config['extra_javascript'])
 
     extra_css = utils.create_media_urls(nav, config['extra_css'])
 
-    return {
-        'site_name': site_name,
-        'site_author': config['site_author'],
-        'favicon': site_favicon,
-        'page_description': page_description,
+    # Support SOURCE_DATE_EPOCH environment variable for "reproducible" builds.
+    # See https://reproducible-builds.org/specs/source-date-epoch/
+    timestamp = int(os.environ.get('SOURCE_DATE_EPOCH', timegm(datetime.utcnow().utctimetuple())))
 
-        # Note that there's intentionally repetition here. Rather than simply
-        # provide the config dictionary we instead pass everything explicitly.
-        #
-        # This helps ensure that we can throughly document the context that
-        # gets passed to themes.
-        'repo_url': config['repo_url'],
-        'repo_name': config['repo_name'],
+    return {
         'nav': nav,
         'base_url': nav.url_context.make_relative('/'),
-        'homepage_url': nav.homepage.url,
-        'site_url': config['site_url'],
 
         'extra_css': extra_css,
         'extra_javascript': extra_javascript,
+
+        'mkdocs_version': mkdocs.__version__,
+        'build_date_utc': datetime.utcfromtimestamp(timestamp),
+
+        'config': config,
+
+        # TODO: remove the rest in 1.0 as they are deprecated
+        'site_name': config['site_name'],
+        'site_url': config['site_url'],
+        'site_author': config['site_author'],
+        'homepage_url': nav.homepage.url,
+        'page_description': config['site_description'],
+        'favicon': config['site_favicon'],
+
+        'repo_url': config['repo_url'],
+        'repo_name': config['repo_name'],
 
         'include_nav': config['include_nav'],
         'include_next_prev': config['include_next_prev'],
 
         'copyright': config['copyright'],
-        'google_analytics': config['google_analytics'],
-
-        'mkdocs_version': mkdocs.__version__,
-        'build_date_utc': datetime.utcnow(),
-
-        'config': config
+        'google_analytics': config['google_analytics']
     }
 
 
@@ -97,6 +112,9 @@ def get_page_context(page, content, toc, meta, config):
     """
     if config['site_url']:
         page.set_canonical_url(config['site_url'])
+
+    if config['repo_url']:
+        page.set_edit_url(config['repo_url'], config['edit_uri'])
 
     page.content = content
     page.toc = toc
@@ -151,11 +169,12 @@ def build_template(template_name, env, config, site_navigation=None):
     return True
 
 
-def _build_page(page, config, site_navigation, env, dump_json):
+def _build_page(page, config, site_navigation, env, dump_json, dirty=False):
+
+    # Get the input/output paths
+    input_path, output_path = get_complete_paths(config, page)
 
     # Read the input file
-    input_path = os.path.join(config['docs_dir'], page.input_path)
-
     try:
         input_content = io.open(input_path, 'r', encoding='utf-8').read()
     except IOError:
@@ -178,13 +197,21 @@ def _build_page(page, config, site_navigation, env, dump_json):
     if 'template' in meta:
         template = env.get_template(meta['template'][0])
     else:
-        template = env.get_template('base.html')
+        try:
+            template = env.get_template('main.html')
+        except jinja2.TemplateNotFound:
+            # TODO: Remove this in version 1.0
+            template = env.get_template('base.html')
+            log.warn(
+                "Your theme does not appear to contain a 'main.html' template. "
+                "The 'base.html' template was used instead, which is deprecated. "
+                "Update your theme so that the primary entry point is 'main.html'."
+            )
 
     # Render the template.
     output_content = template.render(context)
 
     # Write the output file.
-    output_path = os.path.join(config['site_dir'], page.output_path)
     if dump_json:
         json_context = {
             'content': context['content'],
@@ -220,7 +247,7 @@ def build_extra_templates(extra_templates, config, site_navigation=None):
         utils.write_file(output_content.encode('utf-8'), output_path)
 
 
-def build_pages(config, dump_json=False):
+def build_pages(config, dump_json=False, dirty=False):
     """
     Builds all the pages and writes them into the build directory.
     """
@@ -230,25 +257,37 @@ def build_pages(config, dump_json=False):
 
     # TODO: remove DeprecationContext in v1.0 when all deprecated vars have been removed
     from jinja2.runtime import Context
-    deprecated_vars = [
-        'page_title',
-        'content',
-        'toc',
-        'meta',
-        'current_page',
-        'canonical_url',
-        'previous_page',
-        'next_page'
-    ]
+    deprecated_vars = {
+        'page_title': 'page.title',
+        'content': 'page.content',
+        'toc': 'page.toc',
+        'meta': 'page.meta',
+        'canonical_url': 'page.canonical_url',
+        'previous_page': 'page.previous_page',
+        'next_page': 'page.next_page',
+        'current_page': 'page',
+        'include_nav': 'nav|length>1',
+        'include_next_prev': '(page.next_page or page.previous_page)',
+        'site_name': 'config.site_name',
+        'site_author': 'config.site_author',
+        'page_description': 'config.site_description',
+        'repo_url': 'config.repo_url',
+        'repo_name': 'config.repo_name',
+        'site_url': 'config.site_url',
+        'copyright': 'config.copyright',
+        'google_analytics': 'config.google_analytics',
+        'homepage_url': 'nav.homepage.url',
+        'favicon': '{{ base_url }}/img/favicon.ico',
+    }
 
     class DeprecationContext(Context):
         def resolve(self, key):
-            """ Log a warning when acessing any deprecated variable name. """
+            """ Log a warning when accessing any deprecated variable name. """
             if key in deprecated_vars:
-                replacement = "page" if key == 'current_page' else "page.{0}".format(key)
                 log.warn(
-                    "Template variable warning: '{0}' is being deprecated and will not be "
-                    "available in a future version. Use '{1}' instead.".format(key, replacement)
+                    "Template variable warning: '{0}' is being deprecated "
+                    "and will not be available in a future version. Use "
+                    "'{1}' instead.".format(key, deprecated_vars[key])
                 )
             return super(DeprecationContext, self).resolve(key)
 
@@ -258,7 +297,16 @@ def build_pages(config, dump_json=False):
     env.filters['tojson'] = filters.tojson
     search_index = search.SearchIndex()
 
+    # Force absolute URLs in the nav of error pages and account for the
+    # possability that the docs root might be different than the server root.
+    # See https://github.com/mkdocs/mkdocs/issues/77
+    site_navigation.url_context.force_abs_urls = True
+    default_base = site_navigation.url_context.base_path
+    site_navigation.url_context.base_path = utils.urlparse(config['site_url']).path
     build_template('404.html', env, config, site_navigation)
+    # Reset nav behavior to the default
+    site_navigation.url_context.force_abs_urls = False
+    site_navigation.url_context.base_path = default_base
 
     if not build_template('search.html', env, config, site_navigation):
         log.debug("Search is enabled but the theme doesn't contain a "
@@ -272,6 +320,13 @@ def build_pages(config, dump_json=False):
     for page in site_navigation.walk_pages():
 
         try:
+
+            # When --dirty is used, only build the page if the markdown has been modified since the
+            # previous build of the output.
+            input_path, output_path = get_complete_paths(config, page)
+            if dirty and (utils.modified_time(input_path) < utils.modified_time(output_path)):
+                continue
+
             log.debug("Building page %s", page.input_path)
             build_result = _build_page(page, config, site_navigation, env,
                                        dump_json)
@@ -287,20 +342,25 @@ def build_pages(config, dump_json=False):
     utils.write_file(search_index.encode('utf-8'), json_output_path)
 
 
-def build(config, live_server=False, dump_json=False, clean_site_dir=False):
+def build(config, live_server=False, dump_json=False, dirty=False):
     """
     Perform a full site build.
     """
-    if clean_site_dir:
+    if not dirty:
         log.info("Cleaning site directory")
         utils.clean_directory(config['site_dir'])
+    else:
+        # Warn user about problems that may occur with --dirty option
+        log.warning("A 'dirty' build is being performed, this will likely lead to inaccurate navigation and other"
+                    " links within your site. This option is designed for site development purposes only.")
+
     if not live_server:
         log.info("Building documentation to directory: %s", config['site_dir'])
-        if not clean_site_dir and site_directory_contains_stale_files(config['site_dir']):
+        if dirty and site_directory_contains_stale_files(config['site_dir']):
             log.info("The directory contains stale files. Use --clean to remove them.")
 
     if dump_json:
-        build_pages(config, dump_json=True)
+        build_pages(config, dump_json=True, dirty=dirty)
         return
 
     # Reversed as we want to take the media files from the builtin theme
@@ -309,14 +369,14 @@ def build(config, live_server=False, dump_json=False, clean_site_dir=False):
     for theme_dir in reversed(config['theme_dir']):
         log.debug("Copying static assets from theme: %s", theme_dir)
         utils.copy_media_files(
-            theme_dir, config['site_dir'], exclude=['*.py', '*.pyc', '*.html']
+            theme_dir, config['site_dir'], exclude=['*.py', '*.pyc', '*.html'], dirty=dirty
         )
 
     log.debug("Copying static assets from the docs dir.")
-    utils.copy_media_files(config['docs_dir'], config['site_dir'])
+    utils.copy_media_files(config['docs_dir'], config['site_dir'], dirty=dirty)
 
     log.debug("Building markdown pages.")
-    build_pages(config)
+    build_pages(config, dirty=dirty)
 
 
 def site_directory_contains_stale_files(site_directory):

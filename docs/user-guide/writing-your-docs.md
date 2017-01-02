@@ -10,7 +10,10 @@ The [pages configuration](/user-guide/configuration.md#pages) in your
 `mkdocs.yml` defines which pages are built by MkDocs and how they appear in the
 documentation navigation. If not provided, the pages configuration will be
 automatically created by discovering all the Markdown files in the
-[documentation directory](/user-guide/configuration.md#docs_dir).
+[documentation directory](/user-guide/configuration.md#docs_dir). An
+automatically created pages configuration will always be sorted
+alphanumerically by file name. You will need to manually define your pages
+configuration if you would like your pages sorted differantly.
 
 A simple pages configuration looks like this:
 
@@ -220,7 +223,7 @@ last line should contain the same number of backtick characters (`` ` ``):
 
 ~~~no-highlight
 ```
-Fenced code blocks are like Stardard
+Fenced code blocks are like Standard
 Markdown’s regular code blocks, except that
 they’re not indented and instead rely on
 start and end fence lines to delimit the

@@ -125,6 +125,27 @@ class RepoURLTest(unittest.TestCase):
         self.assertEqual(config['repo_url'], config['repo_url'])
         self.assertEqual(config['repo_name'], "Launchpad")
 
+    def test_edit_uri_github(self):
+
+        option = config_options.RepoURL()
+        config = {'repo_url': "https://github.com/mkdocs/mkdocs"}
+        option.post_validation(config, 'repo_url')
+        self.assertEqual(config['edit_uri'], 'edit/master/docs/')
+
+    def test_edit_uri_bitbucket(self):
+
+        option = config_options.RepoURL()
+        config = {'repo_url': "https://bitbucket.org/gutworth/six/"}
+        option.post_validation(config, 'repo_url')
+        self.assertEqual(config['edit_uri'], 'src/default/docs/')
+
+    def test_edit_uri_custom(self):
+
+        option = config_options.RepoURL()
+        config = {'repo_url': "https://launchpad.net/python-tuskarclient"}
+        option.post_validation(config, 'repo_url')
+        self.assertEqual(config.get('edit_uri'), None)
+
 
 class DirTest(unittest.TestCase):
 
@@ -165,6 +186,20 @@ class DirTest(unittest.TestCase):
         self.assertRaises(config_options.ValidationError,
                           option.validate, [])
 
+    def test_doc_dir_is_config_dir(self):
+
+        test_config = {
+            'config_file_path': os.path.join(os.path.abspath('.'), 'mkdocs.yml'),
+            'docs_dir': '.'
+        }
+
+        docs_dir = config_options.Dir()
+
+        test_config['docs_dir'] = docs_dir.validate(test_config['docs_dir'])
+
+        self.assertRaises(config_options.ValidationError,
+                          docs_dir.post_validation, test_config, 'docs_dir')
+
 
 class SiteDirTest(unittest.TestCase):
 
@@ -173,8 +208,8 @@ class SiteDirTest(unittest.TestCase):
         j = os.path.join
         option = config_options.SiteDir()
         docs_dir = config_options.Dir()
-        # Not all systems use the same package directory name, so use the actual dir name
-        mkdocs_pkgdir = os.path.basename(os.path.dirname(mkdocs.__file__))
+        # The parent dir is not the same on every system, so use the actual dir name
+        parent_dir = mkdocs.__file__.split(os.sep)[-3]
 
         test_configs = (
             {'docs_dir': j('site', 'docs'), 'site_dir': 'site'},
@@ -182,16 +217,17 @@ class SiteDirTest(unittest.TestCase):
             {'docs_dir': '.', 'site_dir': '.'},
             {'docs_dir': 'docs', 'site_dir': ''},
             {'docs_dir': '', 'site_dir': ''},
-            {'docs_dir': j('..', mkdocs_pkgdir, 'docs'), 'site_dir': 'docs'},
+            {'docs_dir': j('..', parent_dir, 'docs'), 'site_dir': 'docs'},
         )
 
         for test_config in test_configs:
+            test_config['config_file_path'] = j(os.path.abspath('..'), 'mkdocs.yml')
 
             test_config['docs_dir'] = docs_dir.validate(test_config['docs_dir'])
             test_config['site_dir'] = option.validate(test_config['site_dir'])
 
             self.assertRaises(config_options.ValidationError,
-                              option.post_validation, test_config, 'key')
+                              option.post_validation, test_config, 'site_dir')
 
     def test_site_dir_in_docs_dir(self):
 
@@ -204,6 +240,7 @@ class SiteDirTest(unittest.TestCase):
         )
 
         for test_config in test_configs:
+            test_config['config_file_path'] = j(os.path.abspath('..'), 'mkdocs.yml')
 
             docs_dir = config_options.Dir()
             option = config_options.SiteDir()
@@ -211,11 +248,8 @@ class SiteDirTest(unittest.TestCase):
             test_config['docs_dir'] = docs_dir.validate(test_config['docs_dir'])
             test_config['site_dir'] = option.validate(test_config['site_dir'])
 
-            option.post_validation(test_config, 'key')
-            self.assertEqual(len(option.warnings), 1)
-            self.assertEqual(
-                option.warnings[0][:50],
-                "The 'site_dir' should not be within the 'docs_dir'")
+            self.assertRaises(config_options.ValidationError,
+                              option.post_validation, test_config, 'site_dir')
 
 
 class ThemeTest(unittest.TestCase):
@@ -255,7 +289,7 @@ class ExtrasTest(unittest.TestCase):
         self.assertRaises(config_options.ValidationError,
                           option.validate, {})
 
-    def test_talk(self):
+    def test_walk(self):
 
         option = config_options.Extras(utils.is_markdown_file)
 

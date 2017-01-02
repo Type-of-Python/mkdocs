@@ -37,9 +37,29 @@ the theme.
 
 ## Installation
 
-In order to install MkDocs you'll need [Python] installed on your system, as
-well as the Python package manager, [pip]. You can check if you have these
-already installed from the command line:
+### Install with a Package Manager
+
+If you have and use a package manager (such as [apt-get], [dnf], [homebrew],
+[yum], [chocolatey], etc.) to install packages on your system, then you may
+want to search for a "MkDocs" package and, if a recent version is available,
+install it with your package manager (check your system's documentation for
+details). That's it, you're done! Skip down to [Getting Started](#getting-started).
+
+If your package manager does not have a recent "MkDocs" package, you can still
+use your package manager to install "Python" and "pip". Then you can use pip to
+[install MkDocs](#installing-mkdocs).
+
+[apt-get]: https://help.ubuntu.com/community/AptGet/Howto
+[homebrew]: http://brew.sh/
+[dnf]: http://dnf.readthedocs.io/en/latest/index.html
+[yum]: http://yum.baseurl.org/
+[chocolatey]: https://chocolatey.org/
+
+### Manual Installation
+
+In order to manually install MkDocs you'll need [Python] installed on your
+system, as well as the Python package manager, [pip]. You can check if you have
+these already installed from the command line:
 
 ```bash
 $ python --version
@@ -48,9 +68,41 @@ $ pip --version
 pip 1.5.2
 ```
 
-MkDocs supports Python versions 2.6, 2.7, 3.3, 3.4 and 3.5.
+MkDocs supports Python versions 2.6, 2.7, 3.3, 3.4, 3.5 and pypy.
 
-On Windows it is recommended that you install Python and pip with [Chocolatey].
+#### Installing Python
+
+Install [Python] by downloading an installer appropriate for your system from
+[python.org] and running it.
+
+!!! Note
+
+    If you are installing Python on Windows, be sure to check the box to have
+    Python added to your PATH if the installer offers such an option (it's
+    normally off by default).
+
+    ![Add Python to PATH](img/win-py-install.png)
+
+[python.org]: https://www.python.org/downloads/
+
+#### Installing pip
+
+If you're using a recent version of Python, the Python package manager, [pip],
+is most likely installed by default. However, you may need to upgrade pip to the
+lasted version:
+
+```bash
+pip install --upgrade pip
+```
+
+If you need to install [pip] for the first time, download [get-pip.py].
+Then run the following command to install it:
+
+```bash
+python get-pip.py
+```
+
+#### Installing MkDocs
 
 Install the `mkdocs` package using pip:
 
@@ -66,9 +118,29 @@ $ mkdocs --version
 mkdocs, version 0.15.3
 ```
 
+!!! Note
+    If you are using Windows, some of the above commands may not work
+    out-of-the-box.
+
+    A quick solution may be to preface every Python command with `python -m`
+    like this:
+
+        python -m pip install mkdocs
+        python -m mkdocs
+
+    For a more permanent solution, you may need to edit your `PATH` environment
+    variable to include the `Scripts` directory of your Python installation.
+    Recent versions of Python include a script to do this for you. Navigate to
+    your Python installation directory (for example `C:\Python34\`), open the
+    `Tools`, then `Scripts` folder, and run the `win_add2path.py` file by double
+    clicking on it. Alternatively, you can [download][a2p] the script and run it
+    (`python win_add2path.py`).
+
+[a2p]: https://svn.python.org/projects/python/trunk/Tools/scripts/win_add2path.py
+
 ---
 
-## Getting started
+## Getting Started
 
 Getting started is super easy.
 
@@ -176,6 +248,15 @@ Save your changes, and you'll see the ReadTheDocs theme being used.
 
 ![Screenshot](img/readthedocs.png)
 
+## Changing the Favicon Icon
+
+By default, MkDocs uses the [MkDocs favicon] icon. To use a different icon, create
+an `img` subdirectory in your `docs_dir` and copy your custom `favicon.ico` file
+to that directory. MkDocs will automaticaly detect and use that file as your
+favicon icon.
+
+[MkDocs favicon]: /img/favicon.ico
+
 ## Building the site
 
 That's looking good. You're ready to deploy the first pass of your `MkLorum`
@@ -242,7 +323,7 @@ able to host it from pretty much anywhere. [GitHub project pages] and [Amazon
 S3] may be good hosting options, depending upon your needs. Upload the contents
 of the entire `site` directory to wherever you're hosting your website from and
 you're done. For specific instructions on a number of common hosts, see the
-[Deploying your Docs] page.
+[Deploying your Docs][deploy] page.
 
 ## Getting help
 
@@ -255,7 +336,7 @@ the MkDocs IRC channel `#mkdocs` on freenode.
 [MkDocs wiki]: https://github.com/mkdocs/mkdocs/wiki/MkDocs-Themes
 [build your own]: user-guide/custom-themes/
 [Amazon S3]: http://docs.aws.amazon.com/AmazonS3/latest/dev/WebsiteHosting.html
-[Chocolatey]: https://chocolatey.org/
+[get-pip.py]: https://bootstrap.pypa.io/get-pip.py
 [pages]: user-guide/configuration/#pages
 [discussion group]: https://groups.google.com/forum/#!forum/mkdocs
 [GitHub issues]: https://github.com/mkdocs/mkdocs/issues
@@ -264,4 +345,3 @@ the MkDocs IRC channel `#mkdocs` on freenode.
 [Python]: https://www.python.org/
 [site_name]: user-guide/configuration/#site_name
 [theme]: user-guide/configuration/#theme
-[Deploying your Docs]: user-guide/deploying-your-docs.md

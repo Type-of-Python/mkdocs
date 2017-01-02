@@ -81,6 +81,17 @@ def yaml_load(source, loader=yaml.Loader):
             source.close()
 
 
+def modified_time(file_path):
+    """
+    Return the modified time of the supplied file. If the file does not exists zero is returned.
+    see build_pages for use.
+    """
+    if os.path.exists(file_path):
+        return os.path.getmtime(file_path)
+    else:
+        return 0.0
+
+
 def reduce_list(data_set):
     """ Reduce duplicate items in a list and preserve order """
     seen = set()
@@ -92,6 +103,7 @@ def copy_file(source_path, output_path):
     """
     Copy source_path to output_path, making sure any parent directories exist.
     """
+
     output_dir = os.path.dirname(output_path)
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
@@ -129,14 +141,14 @@ def clean_directory(directory):
             os.unlink(path)
 
 
-def copy_media_files(from_dir, to_dir, exclude=None):
+def copy_media_files(from_dir, to_dir, exclude=None, dirty=False):
     """
     Recursively copy all files except markdown and exclude[ed] files into another directory.
 
     `exclude` accepts a list of Unix shell-style wildcards (`['*.py', '*.pyc']`).
     Note that `exclude` only operates on file names, not directories.
     """
-    for (source_dir, dirnames, filenames) in os.walk(from_dir):
+    for (source_dir, dirnames, filenames) in os.walk(from_dir, followlinks=True):
         relative_path = os.path.relpath(source_dir, from_dir)
         output_dir = os.path.normpath(os.path.join(to_dir, relative_path))
 
@@ -155,6 +167,11 @@ def copy_media_files(from_dir, to_dir, exclude=None):
             if not is_markdown_file(filename):
                 source_path = os.path.join(source_dir, filename)
                 output_path = os.path.join(output_dir, filename)
+
+                # Do not copy when using --dirty if the file has not been modified
+                if dirty and (modified_time(source_path) < modified_time(output_path)):
+                    continue
+
                 copy_file(source_path, output_path)
 
 
@@ -359,8 +376,15 @@ def convert_markdown(markdown_source, extensions=None, extension_configs=None):
     return (html_content, table_of_contents, meta)
 
 
+def get_theme_dir(name):
+    """ Return the directory of an installed theme by name. """
+
+    theme = get_themes()[name]
+    return os.path.dirname(os.path.abspath(theme.load().__file__))
+
+
 def get_themes():
-    """Return a dict of theme names and their locations"""
+    """ Return a dict of all installed themes as (name, entry point) pairs. """
 
     themes = {}
     builtins = pkg_resources.get_entry_map(dist='mkdocs', group='mkdocs.themes')
@@ -380,14 +404,11 @@ def get_themes():
 
         themes[theme.name] = theme
 
-    themes = dict((name, os.path.dirname(os.path.abspath(theme.load().__file__)))
-                  for name, theme in themes.items())
-
     return themes
 
 
 def get_theme_names():
-    """Return a list containing all the names of all the builtin themes."""
+    """Return a list of all installed themes by name."""
 
     return get_themes().keys()
 

@@ -202,6 +202,12 @@ class RepoURL(URL):
             else:
                 config['repo_name'] = repo_host.split('.')[0].title()
 
+        if config['repo_url'] is not None and config.get('edit_uri') is None:
+            if config['repo_name'].lower() == 'github':
+                config['edit_uri'] = 'edit/master/docs/'
+            elif config['repo_name'].lower() == 'bitbucket':
+                config['edit_uri'] = 'src/default/docs/'
+
 
 class Dir(Type):
     """
@@ -223,6 +229,15 @@ class Dir(Type):
 
         return os.path.abspath(value)
 
+    def post_validation(self, config, key_name):
+
+        # Validate that the dir is not the parent dir of the config file.
+        if os.path.dirname(config['config_file_path']) == config[key_name]:
+            raise ValidationError(
+                ("The '{0}' should not be the parent directory of the config "
+                 "file. Use a child directory instead so that the config file "
+                 "is a sibling of the config file.").format(key_name))
+
 
 class SiteDir(Dir):
     """
@@ -233,18 +248,20 @@ class SiteDir(Dir):
 
     def post_validation(self, config, key_name):
 
+        super(SiteDir, self).post_validation(config, key_name)
+
         # Validate that the docs_dir and site_dir don't contain the
         # other as this will lead to copying back and forth on each
         # and eventually make a deep nested mess.
-        if config['docs_dir'].startswith(config['site_dir']):
+        if (config['docs_dir'] + os.sep).startswith(config['site_dir'] + os.sep):
             raise ValidationError(
                 ("The 'docs_dir' should not be within the 'site_dir' as this "
                  "can mean the source files are overwritten by the output or "
                  "it will be deleted if --clean is passed to mkdocs build."
                  "(site_dir: '{0}', docs_dir: '{1}')"
                  ).format(config['site_dir'], config['docs_dir']))
-        elif config['site_dir'].startswith(config['docs_dir']):
-            self.warnings.append(
+        elif (config['site_dir'] + os.sep).startswith(config['docs_dir'] + os.sep):
+            raise ValidationError(
                 ("The 'site_dir' should not be within the 'docs_dir' as this "
                  "leads to the build directory being copied into itself and "
                  "duplicate nested files in the 'site_dir'."
@@ -268,7 +285,7 @@ class ThemeDir(Dir):
 
         package_dir = os.path.abspath(
             os.path.join(os.path.dirname(__file__), '..'))
-        theme_dir = [utils.get_themes()[config['theme']], ]
+        theme_dir = [utils.get_theme_dir(config['theme']), ]
         config['mkdocs_templates'] = os.path.join(package_dir, 'templates')
 
         if config['theme_dir'] is not None:
@@ -376,6 +393,16 @@ class Extras(OptionallyRequired):
 
         config[key_name] = extras
 
+        if not extras:
+            return
+
+        self.warnings.append((
+            'The following files have been automatically included in the '
+            'documentation build and will be added to the HTML: {0}. This '
+            'behavior is deprecated. In version 1.0 and later they will '
+            "need to be explicitly listed in the '{1}' config setting."
+        ).format(','.join(extras), key_name))
+
 
 class Pages(Extras):
     """
@@ -440,6 +467,16 @@ class NumPages(OptionallyRequired):
     def __init__(self, at_lest=1, **kwargs):
         super(NumPages, self).__init__(**kwargs)
         self.at_lest = at_lest
+
+    def pre_validation(self, config, key_name):
+        # TODO: delete deprecated `NumPages` class in version 1.0
+        # Numpages is only used by `include_nav` and `include_next_prev`,
+        # which are both deprecated, so we can delete the entire Option type.
+        if config.get(key_name) is not None:
+            # Only issue warning if option is defined by user.
+            warning = ('The configuration option {0} has been deprecated and will '
+                       'be removed in a future release of MkDocs.').format(key_name)
+            self.warnings.append(warning)
 
     def post_validation(self, config, key_name):
 
